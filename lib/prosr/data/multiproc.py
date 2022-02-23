@@ -1,10 +1,9 @@
 import torch
 import torch.multiprocessing as multiprocessing
-from torch.utils.data.dataloader import (_BaseDataLoaderIter, DataLoader,
-    _worker_manager_loop, _set_SIGCHLD_handler, ExceptionWrapper,
-    pin_memory_batch)
-from torch._C import (_set_worker_signal_handlers, _update_worker_pids,
-    _remove_worker_pids, _error_if_any_worker_fails)
+from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter, DataLoader,ExceptionWrapper
+from torch.utils.data import _utils
+from torch.utils.data._utils import collate
+from torch.utils.data._utils import signal_handling
 import random
 import threading
 import sys
@@ -21,14 +20,14 @@ else:
 
 ##### overwrites #####
 def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, worker_id):
-    global _use_shared_memory
-    _use_shared_memory = True
+    
+    collate._use_shared_memory = True
+    signal_handling._set_worker_signal_handlers()
 
     # Intialize C side signal handlers for SIGBUS and SIGSEGV. Python signal
     # module's handlers are executed after Python returns from C low-level
     # handlers, likely when the same fatal signal happened again already.
     # https://docs.python.org/3/library/signal.html Sec. 18.8.1.1
-    _set_worker_signal_handlers()
 
     torch.set_num_threads(1)
     random.seed(seed)
@@ -55,7 +54,7 @@ def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, wo
             del samples
 
 
-class MyDataLoaderIter(_BaseDataLoaderIter):
+class MyDataLoaderIter(_MultiProcessingDataLoaderIter):
     "Iterates once over the DataLoader's dataset, as specified by the sampler"
 
     def __init__(self, loader):
@@ -76,7 +75,7 @@ class MyDataLoaderIter(_BaseDataLoaderIter):
             self.worker_init_fn = loader.worker_init_fn
             self.index_queues = [multiprocessing.Queue() for _ in range(self.num_workers)]
             self.worker_queue_idx = 0
-            self.worker_result_queue = multiprocessing.SimpleQueue()
+            self.worker_result_queue = multiprocessing.Queue()
             self.batches_outstanding = 0
             self.worker_pids_set = False
             self.shutdown = False
@@ -99,12 +98,12 @@ class MyDataLoaderIter(_BaseDataLoaderIter):
                 else:
                     # do not initialize cuda context if not necessary
                     maybe_device_id = None
-                self.worker_manager_thread = threading.Thread(
-                    target=_worker_manager_loop,
-                    args=(self.worker_result_queue, self.data_queue, self.done_event, self.pin_memory,
-                          maybe_device_id))
-                self.worker_manager_thread.daemon = True
-                self.worker_manager_thread.start()
+                self.pin_memory_thread = threading.Thread(
+                    target=_utils.pin_memory._pin_memory_loop,
+                    args=(self.worker_result_queue, self.data_queue, maybe_device_id, self.done_event))
+                self.pin_memory_thread.daemon = True
+                self.pin_memory_thread.start()
+
             else:
                 self.data_queue = self.worker_result_queue
 
@@ -112,8 +111,11 @@ class MyDataLoaderIter(_BaseDataLoaderIter):
                 w.daemon = True  # ensure that the worker exits on process exit
                 w.start()
 
-            _update_worker_pids(id(self), tuple(w.pid for w in self.workers))
-            _set_SIGCHLD_handler()
+
+            _utils.signal_handling._set_worker_pids(
+                id(self), tuple(w.pid for w in self.workers)
+            )
+            _utils.signal_handling._set_SIGCHLD_handler()
             self.worker_pids_set = True
 
             # prime the prefetch loop
@@ -129,7 +131,7 @@ class MyDataLoaderIter(_BaseDataLoaderIter):
                 random_var = random.choice(self.random_vars)
             batch = self.collate_fn([self.dataset.get(i, random_var) for i in indices])
             if self.pin_memory:
-                batch = pin_memory_batch(batch)
+                batch = _utils.pin_memory_pin_memory_batch(batch)
             return batch
 
         # check if the next sample has already been generated
