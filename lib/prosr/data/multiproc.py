@@ -137,7 +137,7 @@ class MyDataLoaderIter(_MultiProcessingDataLoaderIter):
         # check if the next sample has already been generated
         if self.rcvd_idx in self.reorder_dict:
             batch = self.reorder_dict.pop(self.rcvd_idx)
-            return self._process_next_batch(batch)
+            return self._process_data(batch)
 
         if self.batches_outstanding == 0:
             self._shutdown_workers()
@@ -151,7 +151,7 @@ class MyDataLoaderIter(_MultiProcessingDataLoaderIter):
                 # store out-of-order samples
                 self.reorder_dict[idx] = batch
                 continue
-            return self._process_next_batch(batch)
+            return self._process_data(batch)
 
     def _put_indices(self):
         assert self.batches_outstanding < 2 * self.num_workers
