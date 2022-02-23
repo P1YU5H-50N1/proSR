@@ -1,6 +1,6 @@
 import torch
 import torch.multiprocessing as multiprocessing
-from torch.utils.data.dataloader import (DataLoaderIter, DataLoader,
+from torch.utils.data.dataloader import (_DataLoaderIter, DataLoader,
     _worker_manager_loop, _set_SIGCHLD_handler, ExceptionWrapper,
     pin_memory_batch)
 from torch._C import (_set_worker_signal_handlers, _update_worker_pids,
