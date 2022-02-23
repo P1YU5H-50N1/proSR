@@ -1,6 +1,6 @@
 import torch
 import torch.multiprocessing as multiprocessing
-from torch.utils.data.dataloader import (_DataLoaderIter, DataLoader,
+from torch.utils.data.dataloader import (DataLoaderIter, DataLoader,
     _worker_manager_loop, _set_SIGCHLD_handler, ExceptionWrapper,
     pin_memory_batch)
 from torch._C import (_set_worker_signal_handlers, _update_worker_pids,
@@ -55,7 +55,7 @@ def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, wo
             del samples
 
 
-class MyDataLoaderIter(_DataLoaderIter):
+class MyDataLoaderIter(DataLoaderIter):
     "Iterates once over the DataLoader's dataset, as specified by the sampler"
 
     def __init__(self, loader):
